@@ -20,5 +20,11 @@
     "typescript": "catalog:"
   },
   "scripts": {
+    "setup:accounts": "bun run scripts/setup_accounts.ts",
+    "setup:deploy": "bun run scripts/deploy.ts",
+    "setup:issuer": "bun run scripts/setup_issuer.ts",
+    "escrow:create": "bun run scripts/create_escrow.ts",
+    "escrow:settle": "bun run scripts/settle_escrow.ts",
+    "balances": "bun run scripts/print_balances.ts"
   }
 }

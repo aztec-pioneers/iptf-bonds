@@ -8,7 +8,8 @@
     "./artifacts": "./ts/src/artifacts/index.ts",
     "./constants": "./ts/src/constants.ts",
     "./contract": "./ts/src/contract.ts",
-    "./utils": "./ts/src/utils.ts"
+    "./utils": "./ts/src/utils.ts",
+    "./fees": "./ts/src/fees.ts"
   },
   "scripts": {
     "compile": "cd contracts && aztec compile --workspace",

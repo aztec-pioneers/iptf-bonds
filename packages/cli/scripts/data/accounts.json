@@ -1,0 +1,5 @@
+{
+  "issuer": { "secretKey": "0x0", "salt": "0x0" },
+  "seller": { "secretKey": "0x0", "salt": "0x0" },
+  "buyer": { "secretKey": "0x0", "salt": "0x0" }
+}
