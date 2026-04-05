@@ -7,7 +7,7 @@ use aztec::macros::aztec;
 pub contract DvP {
     use aztec::{
         macros::{functions::external, storage::storage},
-        protocol_types::address::AztecAddress,
+        protocol::address::AztecAddress,
     };
     use private_bonds::PrivateBonds;
     use stablecoin::Stablecoin;

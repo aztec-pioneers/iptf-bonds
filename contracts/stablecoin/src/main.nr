@@ -6,8 +6,8 @@ use aztec::macros::aztec;
 pub contract Stablecoin {
     use aztec::{
         macros::{functions::{authorize_once, external, initializer, only_self}, storage::storage},
-        protocol_types::address::AztecAddress,
-        state_vars::{Owned, public_mutable::PublicMutable},
+        protocol::address::AztecAddress,
+        state_vars::{Owned, PublicMutable},
     };
     use aztec::messages::message_delivery::MessageDelivery;
     use balance_set::BalanceSet;
@@ -22,14 +22,14 @@ pub contract Stablecoin {
     #[initializer]
     #[external("private")]
     fn constructor(total_supply: u64) {
-        let deployer = self.msg_sender().unwrap();
+        let deployer = self.msg_sender();
 
         self.enqueue_self._set_admin(deployer);
         self.enqueue_self._set_total_supply(total_supply);
 
         // Mint entire supply to deployer's private balance
         self.storage.private_balances.at(deployer).add(total_supply as u128).deliver(
-            MessageDelivery.CONSTRAINED_ONCHAIN,
+            MessageDelivery.ONCHAIN_CONSTRAINED,
         );
     }
 
@@ -47,26 +47,26 @@ pub contract Stablecoin {
 
     #[external("private")]
     fn transfer_private(to: AztecAddress, amount: u64) {
-        let sender = self.msg_sender().unwrap();
+        let sender = self.msg_sender();
 
         self.storage.private_balances.at(sender).sub(amount as u128).deliver(
-            MessageDelivery.CONSTRAINED_ONCHAIN,
+            MessageDelivery.ONCHAIN_CONSTRAINED,
         );
         self.storage.private_balances.at(to).add(amount as u128).deliver(
-            MessageDelivery.CONSTRAINED_ONCHAIN,
+            MessageDelivery.ONCHAIN_CONSTRAINED,
         );
     }
 
     /// Delegated transfer for DvP and other authorized scenarios.
     /// Requires `from` to have created an authwit for this exact call.
-    #[authorize_once("from", "nonce")]
+    #[authorize_once("from", "authwit_nonce")]
     #[external("private")]
-    fn transfer_from(from: AztecAddress, to: AztecAddress, amount: u64, nonce: Field) {
+    fn transfer_from(from: AztecAddress, to: AztecAddress, amount: u64, authwit_nonce: Field) {
         self.storage.private_balances.at(from).sub(amount as u128).deliver(
-            MessageDelivery.CONSTRAINED_ONCHAIN,
+            MessageDelivery.ONCHAIN_CONSTRAINED,
         );
         self.storage.private_balances.at(to).add(amount as u128).deliver(
-            MessageDelivery.CONSTRAINED_ONCHAIN,
+            MessageDelivery.ONCHAIN_CONSTRAINED,
         );
     }
 
