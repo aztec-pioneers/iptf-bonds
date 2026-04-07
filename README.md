@@ -4,7 +4,12 @@ Private bond demo on Aztec.
 
 ## Minimal Runbook
 
-If you only want the shortest path to a working frontend, use this:
+If you only want the shortest path to a working frontend, run:
+1. `aztec start --local-network` and in separate terminal
+2.  `/start.sh` located in repo root
+
+
+Alternatively, you can run the commands manually:
 
 ```bash
 # 1) repo root
