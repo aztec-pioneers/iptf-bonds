@@ -22,14 +22,18 @@ export function useBondContract() {
       const paymentToken = AztecAddress.fromString(STABLECOIN_ADDRESS);
 
       const from = AztecAddress.fromString(address);
-      const { contract } = await deployBondContract(
-        wallet,
-        from,
-        name,
-        totalSupply,
-        maturityDate,
-        paymentToken
+      const { contract } = await wallet.enqueue(() =>
+        deployBondContract(
+          wallet,
+          from,
+          name,
+          totalSupply,
+          maturityDate,
+          paymentToken
+        )
       );
+
+      const blockNumber = await wallet.getNode().getBlockNumber();
 
       await createIssuedBond({
         contractAddress: contract.address.toString(),
@@ -37,6 +41,7 @@ export function useBondContract() {
         name,
         totalSupply: totalSupply.toString(),
         maturityDate: maturityDate.toString(),
+        deployedBlock: blockNumber,
       });
 
       return contract.address.toString();
@@ -55,9 +60,11 @@ export function useBondContract() {
         AztecAddress.fromString(bondAddress),
         wallet
       );
-      await bond.methods
-        .add_to_whitelist(AztecAddress.fromString(investor))
-        .send({ from: AztecAddress.fromString(address) });
+      await wallet.enqueue(() =>
+        bond.methods
+          .add_to_whitelist(AztecAddress.fromString(investor))
+          .send({ from: AztecAddress.fromString(address) })
+      );
 
       await addToWhitelist({
         bondAddress,
@@ -81,9 +88,11 @@ export function useBondContract() {
         AztecAddress.fromString(bondAddress),
         wallet
       );
-      await bond.methods
-        .ban_from_whitelist(AztecAddress.fromString(investor))
-        .send({ from: AztecAddress.fromString(address) });
+      await wallet.enqueue(() =>
+        bond.methods
+          .ban_from_whitelist(AztecAddress.fromString(investor))
+          .send({ from: AztecAddress.fromString(address) })
+      );
 
       await removeFromWhitelist(bondAddress, investor);
     },
@@ -101,9 +110,11 @@ export function useBondContract() {
         AztecAddress.fromString(bondAddress),
         wallet
       );
-      await bond.methods
-        .distribute_private(AztecAddress.fromString(investor), amount)
-        .send({ from: AztecAddress.fromString(address) });
+      await wallet.enqueue(() =>
+        bond.methods
+          .distribute_private(AztecAddress.fromString(investor), amount)
+          .send({ from: AztecAddress.fromString(address) })
+      );
     },
     [wallet, address]
   );
@@ -132,15 +143,18 @@ export function useBondContract() {
       // Process in batches of 4
       for (let i = 0; i < distributions.length; i += 4) {
         const batch = distributions.slice(i, i + 4);
-        const calls = batch.map((d) =>
-          bond.methods
-            .distribute_private(AztecAddress.fromString(d.address), d.amount)
-            .request({ from })
-        );
 
-        const resolvedCalls = await Promise.all(calls);
-        const batchCall = new BatchCall(wallet, resolvedCalls);
-        await batchCall.send({ from });
+        await wallet.enqueue(async () => {
+          const calls = batch.map((d) =>
+            bond.methods
+              .distribute_private(AztecAddress.fromString(d.address), d.amount)
+              .request({ from })
+          );
+
+          const resolvedCalls = await Promise.all(calls);
+          const batchCall = new BatchCall(wallet, resolvedCalls);
+          await batchCall.send({ from });
+        });
 
         completed += batch.length;
         onProgress?.(completed, total);
@@ -161,10 +175,12 @@ export function useBondContract() {
         wallet
       );
       const target = AztecAddress.fromString(owner ?? address);
-      const { result } = await bond.methods
-        .private_balance_of(target)
-        .simulate({ from: target });
-      return result as bigint;
+      return wallet.enqueue(async () => {
+        const { result } = await bond.methods
+          .private_balance_of(target)
+          .simulate({ from: target });
+        return result as bigint;
+      });
     },
     [wallet, address]
   );
@@ -182,17 +198,18 @@ export function useBondContract() {
       );
       const from = AztecAddress.fromString(address);
 
-      const [nameResult, supplyResult, maturityResult] = await Promise.all([
-        bond.methods.get_name().simulate({ from }),
-        bond.methods.get_total_supply().simulate({ from }),
-        bond.methods.get_maturity_date().simulate({ from }),
-      ]);
+      const result = await wallet.enqueue(async () => {
+        const nameResult = await bond.methods.get_name().simulate({ from });
+        const supplyResult = await bond.methods.get_total_supply().simulate({ from });
+        const maturityResult = await bond.methods.get_maturity_date().simulate({ from });
+        return {
+          name: decodeNameFromField(nameResult.result as bigint),
+          totalSupply: supplyResult.result as bigint,
+          maturityDate: maturityResult.result as bigint,
+        };
+      });
 
-      return {
-        name: decodeNameFromField(nameResult.result as bigint),
-        totalSupply: supplyResult.result as bigint,
-        maturityDate: maturityResult.result as bigint,
-      };
+      return result;
     },
     [wallet, address]
   );
@@ -208,10 +225,12 @@ export function useBondContract() {
         AztecAddress.fromString(bondAddress),
         wallet
       );
-      const { result } = await bond.methods
-        .is_whitelisted(AztecAddress.fromString(addr))
-        .simulate({ from: AztecAddress.fromString(address) });
-      return result as boolean;
+      return wallet.enqueue(async () => {
+        const { result } = await bond.methods
+          .is_whitelisted(AztecAddress.fromString(addr))
+          .simulate({ from: AztecAddress.fromString(address) });
+        return result as boolean;
+      });
     },
     [wallet, address]
   );
@@ -227,9 +246,11 @@ export function useBondContract() {
         AztecAddress.fromString(bondAddress),
         wallet
       );
-      await bond.methods
-        .redeem(amount)
-        .send({ from: AztecAddress.fromString(address) });
+      await wallet.enqueue(() =>
+        bond.methods
+          .redeem(amount)
+          .send({ from: AztecAddress.fromString(address) })
+      );
     },
     [wallet, address]
   );
@@ -241,7 +262,7 @@ export function useBondContract() {
       const { AztecAddress } = await import("@aztec/aztec.js/addresses");
 
       await wallet.registerBondContract(AztecAddress.fromString(contractAddress));
-      await wallet.registerSender(AztecAddress.fromString(issuerAddress));
+      await wallet.enqueue(() => wallet.registerSender(AztecAddress.fromString(issuerAddress)));
     },
     [wallet]
   );
@@ -252,8 +273,53 @@ export function useBondContract() {
     const node = wallet.getNode();
     const blockNumber = await node.getBlockNumber();
     const block = await node.getBlock(blockNumber);
-    return block ? BigInt(block.header.globalVariables.timestamp.toBigInt()) : 0n;
+    return block ? BigInt(block.header.globalVariables.timestamp) : 0n;
   }, [wallet]);
+
+  const getPublicUsdcBalance = useCallback(
+    async (bondAddress: string) => {
+      if (!wallet || !address) throw new Error("Wallet not connected");
+
+      const { AztecAddress } = await import("@aztec/aztec.js/addresses");
+      const { TokenContract } = await import("@iptf/contracts/artifacts");
+
+      if (!STABLECOIN_ADDRESS) throw new Error("NEXT_PUBLIC_STABLECOIN_ADDRESS not configured");
+      const token = await TokenContract.at(
+        AztecAddress.fromString(STABLECOIN_ADDRESS),
+        wallet
+      );
+      const from = AztecAddress.fromString(address);
+      return wallet.enqueue(async () => {
+        const { result } = await token.methods
+          .balance_of_public(AztecAddress.fromString(bondAddress))
+          .simulate({ from });
+        return result as bigint;
+      });
+    },
+    [wallet, address]
+  );
+
+  const depositUsdc = useCallback(
+    async (bondAddress: string, amount: bigint) => {
+      if (!wallet || !address) throw new Error("Wallet not connected");
+
+      const { AztecAddress } = await import("@aztec/aztec.js/addresses");
+      const { TokenContract } = await import("@iptf/contracts/artifacts");
+
+      if (!STABLECOIN_ADDRESS) throw new Error("NEXT_PUBLIC_STABLECOIN_ADDRESS not configured");
+      const token = await TokenContract.at(
+        AztecAddress.fromString(STABLECOIN_ADDRESS),
+        wallet
+      );
+      const from = AztecAddress.fromString(address);
+      await wallet.enqueue(() =>
+        token.methods
+          .transfer_private_to_public(from, AztecAddress.fromString(bondAddress), amount, 0n)
+          .send({ from })
+      );
+    },
+    [wallet, address]
+  );
 
   return {
     deployBond,
@@ -267,5 +333,7 @@ export function useBondContract() {
     redeem,
     registerBond,
     getBlockTimestamp,
+    getPublicUsdcBalance,
+    depositUsdc,
   };
 }

@@ -28,9 +28,8 @@ export default function HoldingsList() {
           bondName: r.bond_name,
           registeredAt: r.registered_at,
         }));
-        setBonds(mapped);
 
-        // Auto-register each bond with the PXE wallet in the background
+        // Register each bond with PXE before rendering cards
         for (const bond of mapped) {
           try {
             await registerBond(bond.contractAddress, bond.issuerAddress);
@@ -38,6 +37,8 @@ export default function HoldingsList() {
             // Ignore — may already be registered
           }
         }
+
+        setBonds(mapped);
       })
       .catch(console.error);
   }, [address, registerBond]);

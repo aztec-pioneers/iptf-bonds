@@ -13,6 +13,12 @@ import PrivateBondsContractArtifactJson from './PrivateBonds.json' with { type: 
 export const PrivateBondsContractArtifact = loadContractArtifact(PrivateBondsContractArtifactJson as NoirCompiledContract);
 
 
+      export type TransferEvent = {
+        from: AztecAddressLike
+to: AztecAddressLike
+amount: (bigint | number)
+      }
+    
 
 /**
  * Type-safe interface for contract PrivateBonds;
@@ -45,14 +51,14 @@ export class PrivateBondsContract extends ContractBase {
   /**
    * Creates a tx to deploy a new instance of this contract.
    */
-  public static deploy(wallet: Wallet, total_supply: (bigint | number), maturity: (bigint | number), payment_token: AztecAddressLike) {
+  public static deploy(wallet: Wallet, name: FieldLike, total_supply: (bigint | number), maturity: (bigint | number), payment_token: AztecAddressLike, trusted_escrow_class_id: FieldLike) {
     return new DeployMethod<PrivateBondsContract>(PublicKeys.default(), wallet, PrivateBondsContractArtifact, (instance, wallet) => PrivateBondsContract.at(instance.address, wallet), Array.from(arguments).slice(1));
   }
 
   /**
    * Creates a tx to deploy a new instance of this contract using the specified public keys hash to derive the address.
    */
-  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, total_supply: (bigint | number), maturity: (bigint | number), payment_token: AztecAddressLike) {
+  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, name: FieldLike, total_supply: (bigint | number), maturity: (bigint | number), payment_token: AztecAddressLike, trusted_escrow_class_id: FieldLike) {
     return new DeployMethod<PrivateBondsContract>(publicKeys, wallet, PrivateBondsContractArtifact, (instance, wallet) => PrivateBondsContract.at(instance.address, wallet), Array.from(arguments).slice(2));
   }
 
@@ -90,27 +96,33 @@ export class PrivateBondsContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'owner' | 'private_balances' | 'whitelist' | 'total_supply' | 'maturity_date' | 'payment_token'> {
+  public static get storage(): ContractStorageLayout<'issuer' | 'private_balances' | 'whitelist' | 'total_supply' | 'maturity_date' | 'payment_token' | 'trusted_escrow_class_id' | 'name'> {
       return {
-        owner: {
+        issuer: {
       slot: new Fr(1n),
     },
 private_balances: {
-      slot: new Fr(2n),
-    },
-whitelist: {
       slot: new Fr(3n),
     },
-total_supply: {
+whitelist: {
       slot: new Fr(4n),
     },
-maturity_date: {
+total_supply: {
       slot: new Fr(5n),
     },
-payment_token: {
+maturity_date: {
       slot: new Fr(6n),
+    },
+payment_token: {
+      slot: new Fr(7n),
+    },
+trusted_escrow_class_id: {
+      slot: new Fr(9n),
+    },
+name: {
+      slot: new Fr(11n),
     }
-      } as ContractStorageLayout<'owner' | 'private_balances' | 'whitelist' | 'total_supply' | 'maturity_date' | 'payment_token'>;
+      } as ContractStorageLayout<'issuer' | 'private_balances' | 'whitelist' | 'total_supply' | 'maturity_date' | 'payment_token' | 'trusted_escrow_class_id' | 'name'>;
     }
     
 
@@ -126,14 +138,17 @@ payment_token: {
     /** ban_from_whitelist(investor: struct) */
     ban_from_whitelist: ((investor: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor(total_supply: integer, maturity: integer, payment_token: struct) */
-    constructor: ((total_supply: (bigint | number), maturity: (bigint | number), payment_token: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(name: field, total_supply: integer, maturity: integer, payment_token: struct, trusted_escrow_class_id: field) */
+    constructor: ((name: FieldLike, total_supply: (bigint | number), maturity: (bigint | number), payment_token: AztecAddressLike, trusted_escrow_class_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** distribute_private(investor: struct, amount: integer) */
     distribute_private: ((investor: AztecAddressLike, amount: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_maturity_date() */
     get_maturity_date: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** get_name() */
+    get_name: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_total_supply() */
     get_total_supply: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -159,12 +174,62 @@ payment_token: {
     /** transfer_from(from: struct, to: struct, amount: integer, authwit_nonce: field) */
     transfer_from: ((from: AztecAddressLike, to: AztecAddressLike, amount: (bigint | number), authwit_nonce: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** transfer_ownership(new_owner: struct) */
-    transfer_ownership: ((new_owner: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
-
     /** transfer_private(to: struct, amount: integer) */
     transfer_private: ((to: AztecAddressLike, amount: (bigint | number)) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
   };
 
+  
+    public static get events(): { TransferEvent: {abiType: AbiType, eventSelector: EventSelector, fieldNames: string[] } } {
+    return {
+      TransferEvent: {
+        abiType: {
+    "kind": "struct",
+    "fields": [
+        {
+            "name": "from",
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "inner",
+                        "type": {
+                            "kind": "field"
+                        }
+                    }
+                ],
+                "path": "aztec::protocol_types::address::aztec_address::AztecAddress"
+            }
+        },
+        {
+            "name": "to",
+            "type": {
+                "kind": "struct",
+                "fields": [
+                    {
+                        "name": "inner",
+                        "type": {
+                            "kind": "field"
+                        }
+                    }
+                ],
+                "path": "aztec::protocol_types::address::aztec_address::AztecAddress"
+            }
+        },
+        {
+            "name": "amount",
+            "type": {
+                "kind": "integer",
+                "sign": "unsigned",
+                "width": 128
+            }
+        }
+    ],
+    "path": "PrivateBonds::TransferEvent"
+},
+        eventSelector: EventSelector.fromString("0xdff87100"),
+        fieldNames: ["from","to","amount"],
+      }
+    };
+  }
   
 }

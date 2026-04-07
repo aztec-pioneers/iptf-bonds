@@ -56,7 +56,7 @@ const main = async () => {
     if (!(await isTestnet(node))) {
         console.log("Local network detected — advancing chain with dummy txs...");
         const [testAccountData] = await getInitialTestAccountsData();
-        const tempWallet = await EmbeddedWallet.create(node);
+        const tempWallet = await EmbeddedWallet.create(node, { ephemeral: true });
         const tempAccount = await tempWallet.createSchnorrAccount(
             testAccountData.secret,
             testAccountData.salt,
@@ -118,7 +118,7 @@ const main = async () => {
     if (!(await isTestnet(node))) {
         console.log("Local network detected — advancing chain with dummy txs...");
         const [testAccountData] = await getInitialTestAccountsData();
-        const tempWallet = await EmbeddedWallet.create(node);
+        const tempWallet = await EmbeddedWallet.create(node, { ephemeral: true });
         const tempAccount = await tempWallet.createSchnorrAccount(
             testAccountData.secret,
             testAccountData.salt,
@@ -156,10 +156,9 @@ const main = async () => {
     // 4. Create minter account using FPC for fees
     // =========================================================================
     console.log("Creating minter account...");
-    let pxeConfig = {};
-    if (await isTestnet(node)) pxeConfig = { proverEnabled: true };
+    let pxeConfig: Record<string, unknown> = { proverEnabled: false };
 
-    const wallet = await EmbeddedWallet.create(node, { pxeConfig });
+    const wallet = await EmbeddedWallet.create(node, { ephemeral: true, pxeConfig });
     const fpcAztecAddress = AztecAddress.fromString(fpcAddress);
     const paymentMethod = await getSponsoredPaymentMethod(node, wallet, fpcAztecAddress);
 

@@ -217,12 +217,13 @@ pub contract PrivateBonds {
     #[only_self]
     fn _settle_redemption(commitment: Field, amount: u128) {
         let payment_token_address = self.storage.payment_token.read();
+        let payout = amount * 1000000; // 1 bond = 1 USDC (6 decimals)
         // from = self (bond contract), msg_sender = self (internal), so nonce=0 needs no authwit
         self.call(Token::at(payment_token_address)
             .transfer_public_to_commitment(
                 self.address,
                 commitment,
-                amount,
+                payout,
                 0,
             ));
     }

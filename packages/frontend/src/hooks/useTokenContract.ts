@@ -41,10 +41,12 @@ export function useTokenContract() {
       wallet
     );
     const owner = AztecAddress.fromString(address);
-    const { result } = await token.methods
-      .balance_of_private(owner)
-      .simulate({ from: owner });
-    return result as bigint;
+    return wallet.enqueue(async () => {
+      const { result } = await token.methods
+        .balance_of_private(owner)
+        .simulate({ from: owner });
+      return result as bigint;
+    });
   }, [wallet, address, ensureInitialized]);
 
   const mint = useCallback(
@@ -66,9 +68,11 @@ export function useTokenContract() {
         wallet
       );
       const recipient = AztecAddress.fromString(address);
-      await token.methods
-        .mint_to_private(recipient, amount)
-        .send({ from: minterAddr });
+      await wallet.enqueue(() =>
+        token.methods
+          .mint_to_private(recipient, amount)
+          .send({ from: minterAddr })
+      );
     },
     [wallet, address, ensureInitialized]
   );

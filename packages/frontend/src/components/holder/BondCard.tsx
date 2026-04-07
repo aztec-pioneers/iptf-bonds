@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useBondContract } from "@/hooks/useBondContract";
+import { useAztecWallet } from "@/hooks/useAztecWallet";
 import { useToast } from "@/hooks/useToast";
 import { truncateAddress, formatMaturityDate, getTimeRemaining } from "@/lib/bond-utils";
+import BondSwapsSection from "./BondSwapsSection";
 import type { RegisteredBond } from "./HoldingsList";
 
 interface BondCardProps {
@@ -12,6 +14,7 @@ interface BondCardProps {
 
 export default function BondCard({ bond }: BondCardProps) {
   const { getBalance, getBlockTimestamp, getBondInfo, redeem } = useBondContract();
+  const { address } = useAztecWallet();
   const { showToast } = useToast();
 
   const [balance, setBalance] = useState<bigint | null>(null);
@@ -20,6 +23,7 @@ export default function BondCard({ bond }: BondCardProps) {
   const [redeemAmount, setRedeemAmount] = useState("");
   const [redeeming, setRedeeming] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showSwaps, setShowSwaps] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -41,6 +45,11 @@ export default function BondCard({ bond }: BondCardProps) {
     fetchData();
   }, [bond.contractAddress, getBalance, getBlockTimestamp, getBondInfo]);
 
+  const refreshBalance = async () => {
+    const bal = await getBalance(bond.contractAddress);
+    setBalance(bal);
+  };
+
   const handleRedeem = async () => {
     if (!redeemAmount) return;
     setRedeeming(true);
@@ -48,9 +57,7 @@ export default function BondCard({ bond }: BondCardProps) {
       await redeem(bond.contractAddress, BigInt(redeemAmount));
       showToast(`Redeemed ${redeemAmount} bonds`, "success");
       setRedeemAmount("");
-      // Refresh balance
-      const bal = await getBalance(bond.contractAddress);
-      setBalance(bal);
+      await refreshBalance();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Redemption failed", "error");
     } finally {
@@ -119,6 +126,26 @@ export default function BondCard({ bond }: BondCardProps) {
           </div>
         </div>
       )}
+
+      {/* Swaps section */}
+      <div className="pt-4 border-t border-neutral-100">
+        <button
+          onClick={() => setShowSwaps(!showSwaps)}
+          className="text-sm font-medium text-neutral-600 hover:text-neutral-800 cursor-pointer"
+        >
+          {showSwaps ? "Hide Swaps" : "Swaps"}
+        </button>
+        {showSwaps && address && (
+          <div className="mt-3">
+            <BondSwapsSection
+              bondAddress={bond.contractAddress}
+              sellerAddress={address}
+              balance={balance}
+              onBalanceChange={refreshBalance}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

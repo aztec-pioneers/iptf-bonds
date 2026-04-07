@@ -1,15 +1,24 @@
 #!/usr/bin/env tsx
 
-import { copyFile, readFile, writeFile, mkdir } from "fs/promises";
+import { copyFile, readFile, writeFile, mkdir, rename, unlink } from "fs/promises";
 import { dirname, join } from "path";
 import { fileURLToPath } from "node:url";
 
 async function copyFileWithLog(src: string, dest: string): Promise<void> {
   try {
     await copyFile(src, dest);
-    console.log(`Copied: ${src} → ${dest}`);
+    console.log(`Copied: ${src} -> ${dest}`);
   } catch (error) {
     throw new Error(`Failed to copy ${src} to ${dest}: ${error}`);
+  }
+}
+
+async function moveFileWithLog(src: string, dest: string): Promise<void> {
+  try {
+    await rename(src, dest);
+    console.log(`Moved: ${src} -> ${dest}`);
+  } catch (error) {
+    throw new Error(`Failed to move ${src} to ${dest}: ${error}`);
   }
 }
 
@@ -24,6 +33,21 @@ async function replaceInFile(filePath: string, searchText: string, replaceText: 
   }
 }
 
+interface ArtifactEntry {
+  /** Name used in the compiled JSON filename, e.g. "private_bonds" */
+  compiledName: string;
+  /** Name used in the codegen TS/JSON files, e.g. "PrivateBonds" */
+  className: string;
+  /** Subdirectory under artifacts/, e.g. "private_bonds" */
+  subdir: string;
+}
+
+const ARTIFACTS: ArtifactEntry[] = [
+  { compiledName: "private_bonds", className: "PrivateBonds", subdir: "private_bonds" },
+  { compiledName: "dvp_escrow", className: "DvPEscrow", subdir: "dvp_escrow" },
+  { compiledName: "dvp_escrow", className: "Token", subdir: "token" },
+];
+
 async function main() {
   try {
     const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -32,35 +56,31 @@ async function main() {
     console.log(`Working in project directory: ${rootDir}`);
     process.chdir(rootDir);
 
-    // Ensure artifact directories exist
-    await mkdir("./ts/src/artifacts/private_bonds", { recursive: true });
-    await mkdir("./ts/src/artifacts/dvp_escrow", { recursive: true });
+    for (const artifact of ARTIFACTS) {
+      const subdir = `./ts/src/artifacts/${artifact.subdir}`;
+      const topLevelTs = `./ts/src/artifacts/${artifact.className}.ts`;
+      const subdirTs = `${subdir}/${artifact.className}.ts`;
+      const compiledJson = `./contracts/target/${artifact.compiledName}-${artifact.className}.json`;
+      const subdirJson = `${subdir}/${artifact.className}.json`;
 
-    // Move PrivateBonds artifacts
-    console.log("Moving PrivateBonds artifacts...");
-    await copyFileWithLog(
-      "./contracts/target/private_bonds-PrivateBonds.json",
-      "./ts/src/artifacts/private_bonds/PrivateBonds.json"
-    );
-    await replaceInFile(
-      "./ts/src/artifacts/PrivateBonds.ts",
-      "../../../contracts/target/private_bonds-PrivateBonds.json",
-      "./private_bonds/PrivateBonds.json"
-    );
+      console.log(`\nProcessing ${artifact.className}...`);
 
-    // Move DvPEscrow artifacts
-    console.log("Moving DvPEscrow artifacts...");
-    await copyFileWithLog(
-      "./contracts/target/dvp_escrow-DvPEscrow.json",
-      "./ts/src/artifacts/dvp_escrow/DvPEscrow.json"
-    );
-    await replaceInFile(
-      "./ts/src/artifacts/DvPEscrow.ts",
-      "../../../contracts/target/dvp_escrow-DvPEscrow.json",
-      "./dvp_escrow/DvPEscrow.json"
-    );
+      // Ensure subdirectory exists
+      await mkdir(subdir, { recursive: true });
 
-    console.log("Artifacts moved and imports fixed successfully!");
+      // Copy compiled JSON into subdirectory
+      await copyFileWithLog(compiledJson, subdirJson);
+
+      // Move codegen'd TS into subdirectory and fix its import path
+      await moveFileWithLog(topLevelTs, subdirTs);
+      await replaceInFile(
+        subdirTs,
+        `../../../contracts/target/${artifact.compiledName}-${artifact.className}.json`,
+        `./${artifact.className}.json`
+      );
+    }
+
+    console.log("\nArtifacts moved and imports fixed successfully!");
 
   } catch (error) {
     console.error("Script failed:", error);

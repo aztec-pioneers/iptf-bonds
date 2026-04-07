@@ -4,14 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import { Icon } from "@iconify/react";
 import { useTokenContract } from "@/hooks/useTokenContract";
 import { useToast } from "@/hooks/useToast";
+import { formatUsdcAmount } from "@/lib/bond-utils";
 
-const TOKEN_DECIMALS = 6;
-const MAX_MINT = 1_000_000;
-
-function formatTokenBalance(raw: bigint): string {
-  const whole = raw / BigInt(10 ** TOKEN_DECIMALS);
-  return whole.toLocaleString();
-}
+const MAX_MINT = 100_000_000;
 
 export default function TokenBalance() {
   const { getBalance, mint } = useTokenContract();
@@ -79,7 +74,7 @@ export default function TokenBalance() {
             {loadingBalance && balance === null ? (
               <span className="text-neutral-400">Loading...</span>
             ) : balance !== null ? (
-              formatTokenBalance(balance)
+              formatUsdcAmount(balance)
             ) : (
               <span className="text-neutral-400">--</span>
             )}

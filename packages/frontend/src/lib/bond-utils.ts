@@ -32,6 +32,35 @@ export function getTimeRemaining(
   return { expired: false, display: `${hours}h ${minutes}m remaining` };
 }
 
+// USDC formatting (6 decimals)
+const TOKEN_DECIMALS = 6;
+const TOKEN_SCALE = 10n ** BigInt(TOKEN_DECIMALS);
+
+export function formatUsdcAmount(raw: string | bigint): string {
+  const value = typeof raw === "string" ? BigInt(raw) : raw;
+  const whole = value / TOKEN_SCALE;
+  const frac = value % TOKEN_SCALE;
+  const fracStr = frac.toString().padStart(TOKEN_DECIMALS, "0").replace(/0+$/, "");
+  return fracStr.length > 0 ? `${whole}.${fracStr.padEnd(2, "0")}` : `${whole}.00`;
+}
+
+export function parseUsdcToRaw(display: string): bigint {
+  const [wholePart, fracPart = ""] = display.split(".");
+  const padded = fracPart.slice(0, TOKEN_DECIMALS).padEnd(TOKEN_DECIMALS, "0");
+  return BigInt(wholePart) * TOKEN_SCALE + BigInt(padded);
+}
+
+export function formatUnitPrice(paymentRaw: string | bigint, bondAmount: string | bigint): string {
+  const payment = typeof paymentRaw === "string" ? BigInt(paymentRaw) : paymentRaw;
+  const bonds = typeof bondAmount === "string" ? BigInt(bondAmount) : bondAmount;
+  if (bonds === 0n) return "0.0000";
+  // Multiply by 10000 for 4 decimal places, then format
+  const scaled = (payment * 10000n) / (bonds * TOKEN_SCALE);
+  const whole = scaled / 10000n;
+  const frac = (scaled % 10000n).toString().padStart(4, "0");
+  return `${whole}.${frac}`;
+}
+
 // Name encoding/decoding for Field storage
 export function encodeNameToField(name: string): bigint {
   const bytes = new TextEncoder().encode(name.slice(0, 31));

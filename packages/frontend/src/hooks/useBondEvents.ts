@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useAztecWallet } from "@/hooks/useAztecWallet";
+import { PrivateBondsContract } from "@iptf/contracts/artifacts";
 
 export interface TransferEventData {
   from: string;
@@ -16,44 +17,49 @@ export function useBondEvents() {
   const [loading, setLoading] = useState(false);
 
   const fetchEvents = useCallback(
-    async (bondAddress: string) => {
+    async (bondAddress: string, fromBlock?: number) => {
       if (!wallet || !address) return;
       setLoading(true);
 
       try {
         const { AztecAddress } = await import("@aztec/aztec.js/addresses");
-        const { PrivateBondsContract } = await import("@iptf/contracts/artifacts");
 
-        const bond = await PrivateBondsContract.at(
-          AztecAddress.fromString(bondAddress),
-          wallet
+        const eventMetadata = PrivateBondsContract.events.TransferEvent;
+
+        const contractAddr = AztecAddress.fromString(bondAddress);
+        const scope = AztecAddress.fromString(address);
+
+        const toBlock = (await wallet.getNode().getBlockNumber()) + 1;
+
+        const rawEvents = await wallet.enqueue(() =>
+          wallet.getPrivateEvents(
+            eventMetadata,
+            {
+              contractAddress: contractAddr,
+              scopes: [scope],
+              fromBlock: fromBlock ?? 1,
+              toBlock,
+            }
+          )
         );
 
-        // Fetch encrypted events tagged to the issuer
-        // The PXE decrypts events tagged via deliver_to(issuer, ...)
-        const rawEvents = await wallet.getEvents(
-          bond.address,
-          "TransferEvent",
-          0, // from block 0
-          100 // max events
-        );
-
-        const parsed: TransferEventData[] = rawEvents.map((e: any) => ({
-          from: e.from?.toString() ?? e.fields?.[0]?.toString() ?? "0x0",
-          to: e.to?.toString() ?? e.fields?.[1]?.toString() ?? "0x0",
-          amount: BigInt(e.amount?.toString() ?? e.fields?.[2]?.toString() ?? "0"),
-        }));
+        const parsed: TransferEventData[] = rawEvents.map((e: any) => {
+          const evt = e.event;
+          return {
+            from: evt.from?.inner?.toString() ?? evt.from?.toString() ?? "0x0",
+            to: evt.to?.inner?.toString() ?? evt.to?.toString() ?? "0x0",
+            amount: BigInt(evt.amount?.toString() ?? "0"),
+          };
+        });
 
         // Compute holder balances from events
         const balances = new Map<string, bigint>();
         for (const evt of parsed) {
-          const fromAddr = evt.from;
-          const toAddr = evt.to;
-          balances.set(toAddr, (balances.get(toAddr) ?? 0n) + evt.amount);
-          balances.set(fromAddr, (balances.get(fromAddr) ?? 0n) - evt.amount);
+          balances.set(evt.to, (balances.get(evt.to) ?? 0n) + evt.amount);
+          balances.set(evt.from, (balances.get(evt.from) ?? 0n) - evt.amount);
         }
 
-        // Remove zero balances
+        // Remove zero/negative balances
         for (const [key, val] of balances) {
           if (val <= 0n) balances.delete(key);
         }
@@ -62,7 +68,6 @@ export function useBondEvents() {
         setHolderBalances(balances);
       } catch (err) {
         console.error("Failed to fetch events:", err);
-        // Events API may not be available yet - set empty state
         setEvents([]);
         setHolderBalances(new Map());
       } finally {
