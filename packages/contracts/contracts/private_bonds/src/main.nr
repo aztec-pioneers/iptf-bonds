@@ -5,11 +5,12 @@ pub contract PrivateBonds {
     use aztec::{
         macros::{functions::{authorize_once, external, initializer, only_self}, storage::storage},
         protocol::address::AztecAddress,
-        state_vars::{Map, Owned, PublicMutable},
+        state_vars::{Map, Owned, PublicImmutable, PublicMutable},
     };
     use aztec::messages::message_delivery::MessageDelivery;
     use aztec::test::helpers::test_environment::TestEnvironment;
     use balance_set::BalanceSet;
+    use token_contract::Token;
 
     #[storage]
     struct Storage<Context> {
@@ -18,17 +19,17 @@ pub contract PrivateBonds {
         whitelist: Map<AztecAddress, PublicMutable<bool, Context>, Context>,
         total_supply: PublicMutable<u128, Context>,
         maturity_date: PublicMutable<u64, Context>,
+        payment_token: PublicImmutable<AztecAddress, Context>,
     }
 
     #[initializer]
     #[external("private")]
-    fn constructor(total_supply: u128, maturity: u64) {
+    fn constructor(total_supply: u128, maturity: u64, payment_token: AztecAddress) {
         let issuer = self.msg_sender();
 
         // Set public state via enqueued calls
-        self.enqueue_self._set_owner(issuer);
-        self.enqueue_self._set_maturity(maturity);
-        self.enqueue_self._set_total_supply(total_supply);
+
+        self.enqueue_self._set_immutables(issuer, total_supply, maturity, payment_token);
 
         // Mint entire supply to issuer's private balance
         // This is the ONLY minting that ever happens
@@ -39,20 +40,16 @@ pub contract PrivateBonds {
 
     #[external("public")]
     #[only_self]
-    fn _set_owner(owner: AztecAddress) {
+    fn _set_immutables(
+        owner: AztecAddress,
+        total_supply: u128,
+        maturity: u64,
+        payment_token: AztecAddress,
+    ) {
         self.storage.owner.write(owner);
-    }
-
-    #[external("public")]
-    #[only_self]
-    fn _set_maturity(maturity: u64) {
-        self.storage.maturity_date.write(maturity);
-    }
-
-    #[external("public")]
-    #[only_self]
-    fn _set_total_supply(total_supply: u128) {
         self.storage.total_supply.write(total_supply);
+        self.storage.maturity_date.write(maturity);
+        self.storage.payment_token.initialize(payment_token);
     }
 
     #[external("public")]
@@ -102,6 +99,7 @@ pub contract PrivateBonds {
         let sender = self.msg_sender();
 
         // Check both sender and recipient are whitelisted
+        // Could be made into one call
         self.enqueue_self._assert_is_whitelisted(sender);
         self.enqueue_self._assert_is_whitelisted(to);
 
@@ -132,16 +130,42 @@ pub contract PrivateBonds {
         );
     }
 
-    /// Redeem bonds at maturity. Investor burns their bonds directly.
+    /// Redeem bonds at maturity. Burns bonds and pays out stablecoins 1:1 from
+    /// the contract's public stablecoin balance to the investor's private balance.
     #[external("private")]
     fn redeem(amount: u128) {
         let investor = self.msg_sender();
         self.enqueue_self._assert_is_whitelisted(investor);
         self.enqueue_self._assert_maturity_reached();
 
+        // Burn bonds from investor's private balance
         self.storage.private_balances.at(investor).sub(amount).deliver(
             MessageDelivery.ONCHAIN_CONSTRAINED,
         );
+
+        // Create a partial note commitment for the stablecoin payout to the investor
+        let payment_token_address = self.storage.payment_token.read();
+        let commitment = self.call(Token::at(payment_token_address)
+            .initialize_transfer_commitment(investor, self.address));
+
+        // Enqueue public function to finalize the payout from contract's public balance
+        self.enqueue_self._settle_redemption(commitment, amount);
+    }
+
+    /// Finalize redemption payout: transfer stablecoins from this contract's public
+    /// balance to the investor's private balance via the commitment.
+    #[external("public")]
+    #[only_self]
+    fn _settle_redemption(commitment: Field, amount: u128) {
+        let payment_token_address = self.storage.payment_token.read();
+        // from = self (bond contract), msg_sender = self (internal), so nonce=0 needs no authwit
+        self.call(Token::at(payment_token_address)
+            .transfer_public_to_commitment(
+                self.address,
+                commitment,
+                amount,
+                0,
+            ));
     }
 
     #[external("public")]
@@ -201,7 +225,7 @@ pub contract PrivateBonds {
 
         let bond_addr = env.deploy("PrivateBonds").with_private_initializer(
             issuer,
-            PrivateBonds::interface().constructor(1_000_000, 0),
+            PrivateBonds::interface().constructor(1_000_000, 0, AztecAddress::zero()),
         );
 
         let balance: u128 =

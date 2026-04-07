@@ -33,12 +33,14 @@ export async function deployBondContract(
     from: AztecAddress,
     totalSupply: bigint,
     maturity: bigint,
+    paymentToken: AztecAddress,
     opts: { send: SendInteractionOptions<InteractionWaitOptions> } = { send: { from } }
 ): Promise<{ contract: PrivateBondsContract, instance: ContractInstanceWithAddress }> {
     const contractDeployment = await PrivateBondsContract.deployWithOpts(
         { wallet, method: "constructor" },
         totalSupply,
         maturity,
+        paymentToken,
     );
     const instance = await contractDeployment.getInstance();
     const { contract } = await contractDeployment.send(opts.send);
