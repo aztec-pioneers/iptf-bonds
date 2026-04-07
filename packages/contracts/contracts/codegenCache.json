@@ -1,7 +1,7 @@
 {
   "dvp_escrow-DvPEscrow.json": {
     "contractName": "DvPEscrow",
-    "hash": "ab5a2c5d241d1685dfb8afc35b58efaa4d57cf929970bea882bf083cc0814dad"
+    "hash": "201e4a92ffec752b4ed568b2fabbad15442e1baa6858355ffb4f65831fcac407"
   },
   "dvp_escrow-Token.json": {
     "contractName": "Token",
@@ -9,6 +9,6 @@
   },
   "private_bonds-PrivateBonds.json": {
     "contractName": "PrivateBonds",
-    "hash": "d19c337df4c1344e29c90a01902086c3f9c53e83d44cf6f0bfc8048726b312af"
+    "hash": "b06fc21fd79a4cd425485456289fb88118516b1f78abc915793ba45c4002fa2b"
   }
 }

@@ -4,14 +4,22 @@ import { getInitialTestAccountsData } from "@aztec/accounts/testing";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { createAztecNodeClient, type AztecNode } from "@aztec/aztec.js/node";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { PrivateBondsContract, PrivateBondsContractArtifact } from "../src/artifacts/index.js";
+import {
+    PrivateBondsContract,
+    PrivateBondsContractArtifact,
+    TokenContract,
+    TokenContractArtifact,
+} from "../src/artifacts/index.js";
 import {
     deployBondContract,
+    deployTokenContract,
     whitelistInvestor,
     distributeBonds,
     expectBondBalancePrivate,
+    expectTokenBalancePrivate,
     getBondContract,
 } from "../src/contract.js";
+import { TOKEN_METADATA } from "../src/constants.js";
 
 const { AZTEC_NODE_URL = "http://localhost:8080" } = process.env;
 
@@ -29,6 +37,8 @@ describe("PrivateBonds", () => {
 
     let bonds: PrivateBondsContract;
     let bondsInstance: any;
+    let stablecoin: TokenContract;
+    let stablecoinInstance: any;
 
     const TOTAL_SUPPLY = 1_000_000n;
     const MATURITY = 0n; // maturity in the past so redeem works immediately
@@ -56,14 +66,22 @@ describe("PrivateBonds", () => {
         await bobWallet.registerSender(aliceAddress, "alice");
     });
 
-    test("deploy and verify issuer balance", async () => {
-        ({ contract: bonds, instance: bondsInstance } = await deployBondContract(
-            issuerWallet, issuerAddress, TOTAL_SUPPLY, MATURITY
+    test("deploy stablecoin and bond contracts", async () => {
+        // Deploy stablecoin first (needed as payment_token for bonds)
+        ({ contract: stablecoin, instance: stablecoinInstance } = await deployTokenContract(
+            issuerWallet, issuerAddress, TOKEN_METADATA.stablecoin
         ));
 
-        // register bond contract in other wallets
-        await aliceWallet.registerContract(bondsInstance, PrivateBondsContractArtifact);
-        await bobWallet.registerContract(bondsInstance, PrivateBondsContractArtifact);
+        // Deploy bonds with stablecoin as payment token
+        ({ contract: bonds, instance: bondsInstance } = await deployBondContract(
+            issuerWallet, issuerAddress, TOTAL_SUPPLY, MATURITY, stablecoin.address
+        ));
+
+        // register contracts in other wallets
+        for (const wallet of [aliceWallet, bobWallet]) {
+            await wallet.registerContract(bondsInstance, PrivateBondsContractArtifact);
+            await wallet.registerContract(stablecoinInstance, TokenContractArtifact);
+        }
 
         expect(await expectBondBalancePrivate(issuerWallet, issuerAddress, bonds, TOTAL_SUPPLY)).toBe(true);
     });
@@ -89,13 +107,27 @@ describe("PrivateBonds", () => {
         expect(await expectBondBalancePrivate(bobWallet, bobAddress, bonds, 200_000n)).toBe(true);
     });
 
-    test("redeem at maturity", async () => {
+    test("redeem at maturity with stablecoin payout", async () => {
+        const REDEEM_AMOUNT = 200_000n;
+
+        // Fund the bond contract's public stablecoin balance (issuer transfers stablecoins)
+        await stablecoin
+            .withWallet(issuerWallet)
+            .methods
+            .mint_to_public(bonds.address, REDEEM_AMOUNT)
+            .send({ from: issuerAddress });
+
+        // Bob redeems bonds — should burn bonds and receive stablecoins privately
         await bonds
             .withWallet(bobWallet)
             .methods
-            .redeem(200_000n)
+            .redeem(REDEEM_AMOUNT)
             .send({ from: bobAddress });
 
+        // Verify bob's bond balance is 0
         expect(await expectBondBalancePrivate(bobWallet, bobAddress, bonds, 0n)).toBe(true);
+
+        // Verify bob received stablecoins privately
+        expect(await expectTokenBalancePrivate(bobWallet, bobAddress, stablecoin, REDEEM_AMOUNT)).toBe(true);
     });
 });

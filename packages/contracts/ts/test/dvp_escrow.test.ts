@@ -83,14 +83,14 @@ describe("DvP Escrow", () => {
         await buyerWallet.registerSender(issuerAddress, "issuer");
         await buyerWallet.registerSender(sellerAddress, "seller");
 
-        // Deploy PrivateBonds (sell side)
-        ({ contract: bonds, instance: bondsInstance } = await deployBondContract(
-            issuerWallet, issuerAddress, BOND_SUPPLY, 0n
-        ));
-
-        // Deploy Token / stablecoin (buy side)
+        // Deploy Token / stablecoin (buy side) — must deploy first since bonds need payment_token
         ({ contract: stablecoin, instance: stablecoinInstance } = await deployTokenContract(
             issuerWallet, issuerAddress, TOKEN_METADATA.stablecoin
+        ));
+
+        // Deploy PrivateBonds (sell side)
+        ({ contract: bonds, instance: bondsInstance } = await deployBondContract(
+            issuerWallet, issuerAddress, BOND_SUPPLY, 0n, stablecoin.address
         ));
 
         // Register contracts across wallets
