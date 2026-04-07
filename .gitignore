@@ -2,4 +2,7 @@ node_modules/
 target/
 ts/dest/
 *.json.bak
-.next
+.next/
+pxe_data_*/
+wallet_data_*/
+data/
