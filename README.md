@@ -1,279 +1,177 @@
-# Private Institutional Bond on Aztec L2
+# IPTF Bonds
 
-> **Status:** Complete
-> **Privacy Primitive:** Confidential transfers via Aztec native notes
+Private bond demo on Aztec.
 
-A zero-coupon bond protocol deployed on Aztec Network for native privacy. Transaction amounts stay private while maintaining regulatory compliance via on-chain whitelist.
+## Minimal Runbook
 
-## Overview
-
-This is a proof-of-concept implementation of a privacy-preserving bond protocol on Aztec L2. Bondholders can trade and redeem bonds without revealing transaction amounts to the blockchain—amounts are encrypted in private notes.
-
-### Key Features
-
-- Zero-coupon bonds with maturity enforcement
-- Native Aztec privacy (notes, nullifiers, encrypted state)
-- Private peer-to-peer trading with atomic DvP support
-- Redemption at maturity
-- All amounts private; whitelist entries visible for KYC/AML compliance
-
-## Repository Structure
-
-#### `/contracts`
-
-Nargo workspace containing three Aztec smart contracts and a test suite:
-
-- `private_bonds/` — Bond token contract with private balances, whitelist, maturity
-- `stablecoin/` — Minimal private ERC20 stablecoin (payment leg for DvP)
-- `dvp/` — Stateless DvP coordinator (atomic bond↔stablecoin swap via authwit)
-- `tests/` — Noir-native tests using Aztec's `TestEnvironment` (run with `aztec test`)
-
-#### `/SPEC.md`
-
-Full specification covering identity model, storage structure, protocol flow, security assumptions, and privacy analysis. Includes appendix on Authentication Witness (authwit) pattern.
-
-#### `/test.sh`
-
-Profiling script that deploys all contracts, runs the full bond lifecycle, and reports per-circuit gate counts using `aztec-wallet profile`.
-
-## How It Works: Aztec Privacy Model
-
-Aztec provides native privacy primitives that handle the complexity we built manually in the custom-utxo approach:
-
-- **Notes**: Encrypted state owned by users
-- **Nullifiers**: Prevent double-spending without revealing which note was spent
-- **Private execution**: Proofs generated client-side, verified on-chain
-
-### Privacy Guarantees
-
-| Data                     | Visibility                           |
-| ------------------------ | ------------------------------------ |
-| Whitelist (who can hold) | Public                               |
-| Individual balances      | Private                              |
-| Transfer amounts         | Private                              |
-| Total supply             | Public (but fixed at initialization) |
-
-The fixed supply model prevents observers from deducing transaction amounts by watching supply changes.
-
-## Cryptographic Assumptions
-
-- **Aztec Protocol**: ZK-SNARK proofs, note encryption, nullifier uniqueness
-- **Grumpkin Curve**: Aztec's native curve for note encryption and nullifiers
-- **ECDH**: Secure key exchange for note encryption
-
-## Threat Model
-
-- **Decentralized Sequencer**: No single trusted relayer (unlike custom-utxo approach)
-- **Encrypted Mempool**: Frontrunning mitigation built into Aztec
-- **Issuer Trust**: Issuer controls whitelist (acceptable for regulated context)
-- **Public Identities**: Participants linkable via whitelist (regulatory requirement)
-
-## Getting Started
-
-### Prerequisites
-
-- [Docker](https://docs.docker.com/get-docker/)
-- [Aztec Sandbox](https://docs.aztec.network/guides/developer_guides/getting_started)
-
-### Build Everything
+If you only want the shortest path to a working frontend, use this:
 
 ```bash
-# 1. Start Aztec sandbox
+# 1) repo root
+pnpm install
+
+# 2) build local Noir contracts/bindings
+cd packages/contracts
+pnpm build
+
+# 3) in another terminal, start Aztec local network
 aztec start --local-network
 
-# 2. Import test accounts (in a new terminal)
-aztec-wallet import-test-accounts
+# make sure your local Aztec/L1 stack matches packages/cli/.env
+# L2: http://localhost:8080
+# L1: http://localhost:8545
+# chain id: 31337
 
-# 3. Compile all contracts (workspace)
-cd contracts
-aztec compile
+# 4) deploy FPC + stablecoin and generate frontend env
+cd ../cli
+pnpm setup:deploy
+
+# 5) start frontend
+cd ../frontend
+pnpm dev
 ```
 
-### Run Tests
+Then open `http://localhost:3000`, create an account, mint stablecoin on `/tokens`, and deploy a bond on `/issuer`.
+
+## What Matters
+
+- `packages/contracts`: Noir contracts and generated TS artifacts
+- `packages/cli`: deployment and demo scripts
+- `packages/frontend`: Next.js app
+- `packages/api`: not required for the frontend bring-up path
+
+## Required Tooling
+
+- Node.js
+- `pnpm`
+- `git`
+- `aztec` CLI on `PATH`
+
+This repo pins Aztec packages to `4.2.0-aztecnr-rc.2`, so your CLI should match that version.
+
+## Frontend Bring-Up
+
+### 1. Install dependencies
+
+From the repo root:
 
 ```bash
-# Noir-native tests (requires TXE — no sandbox needed)
-cd contracts
-aztec test
+pnpm install
 ```
 
-## Demo: Full Bond Lifecycle
+Important: root `postinstall` runs `scripts/token.ts`, which updates `deps/aztec-standards`, compiles the token contract, and copies generated token artifacts into `packages/contracts/ts/src/artifacts/token`.
 
-This walkthrough demonstrates the complete flow: issuance → whitelist → distribution → P2P trade → redemption.
+### 2. Start Aztec local network
 
-### Terminal 1: Start Aztec Sandbox
+Start a local Aztec network that exposes:
+
+- L2 at `http://localhost:8080`
+- L1 at `http://localhost:8545`
+- chain id `31337`
+
+The repo expects those values by default.
+
+With the Aztec CLI:
 
 ```bash
 aztec start --local-network
 ```
 
-Wait for "Aztec Sandbox is now ready". The sandbox provides pre-funded test accounts.
+### 3. Build the Noir contracts
 
-### Terminal 2: Run Demo Script
-
-```bash
-./test.sh
-```
-
-### Step 1: Issuer Deploys Bond Contract
+From the repo root:
 
 ```bash
-aztec-wallet deploy private_bonds-PrivateBonds.json \
-  --from accounts:test0 \
-  --init constructor \
-  --args 1000000 0
+pnpm --filter @iptf/contracts run build
 ```
 
-This will:
+This compiles the workspace in `packages/contracts/contracts` and regenerates TS bindings in `packages/contracts/ts/src/artifacts`.
 
-- Deploy the PrivateBonds contract
-- Mint entire supply (1M) to issuer's private balance
-- Set maturity date (0 for immediate in demo)
+### 4. Configure CLI env
 
-### Step 2: KYC & Whitelist Investors
+`packages/cli/.env` should point at your local network:
 
 ```bash
-# Add Investor A to whitelist
-aztec-wallet send add_to_whitelist \
-  --from accounts:test0 \
-  --contract-address contracts:privatebonds \
-  --args accounts:test1
-
-# Add Investor B to whitelist
-aztec-wallet send add_to_whitelist \
-  --from accounts:test0 \
-  --contract-address contracts:privatebonds \
-  --args accounts:test2
+L2_NODE_URL=http://localhost:8080
+L1_RPC_URL=http://localhost:8545
+L1_CHAIN_ID=31337
+L1_PRIVATE_KEY=<funded local key>
 ```
 
-Whitelist is public (regulatory requirement). Only whitelisted addresses can hold bonds.
+If you are using the standard local network, `packages/cli/.env` is already set up for that.
 
-### Step 3: Primary Market Distribution
+### 5. Deploy the contracts the frontend needs
+
+From `packages/cli`:
 
 ```bash
-# Issuer distributes 500k to Investor A (amount hidden)
-aztec-wallet send distribute_private \
-  --from accounts:test0 \
-  --contract-address contracts:privatebonds \
-  --args accounts:test1 500000
-
-# Issuer distributes 300k to Investor B (amount hidden)
-aztec-wallet send distribute_private \
-  --from accounts:test0 \
-  --contract-address contracts:privatebonds \
-  --args accounts:test2 300000
+pnpm setup:deploy
 ```
 
-Observers see whitelist checks but NOT the amounts. Total supply unchanged.
+This does the important Aztec-side setup:
 
-### Step 4: Secondary Market Trading
+- bootstraps and funds Sponsored FPC
+- creates a minter account
+- deploys the stablecoin contract
+- writes `packages/cli/scripts/data/deployments.json`
+- writes `packages/frontend/.env.local`
+
+The frontend depends on these env vars being populated:
+
+- `NEXT_PUBLIC_AZTEC_NODE_URL`
+- `NEXT_PUBLIC_SPONSORED_FPC_ADDRESS`
+- `NEXT_PUBLIC_STABLECOIN_ADDRESS`
+- `NEXT_PUBLIC_STABLECOIN_MINTER`
+
+Important: `setup:deploy` does not deploy a bond contract. Bonds are deployed from the frontend.
+
+### 6. Run the frontend
+
+From `packages/frontend`:
 
 ```bash
-# Investor A sells 100k to Investor B (amount hidden)
-aztec-wallet send transfer_private \
-  --from accounts:test1 \
-  --contract-address contracts:privatebonds \
-  --args accounts:test2 100000
+pnpm dev
 ```
 
-This is the most private operation:
+Then open `http://localhost:3000`.
 
-- Sender: Hidden (note consumption reveals nothing)
-- Recipient: Revealed via whitelist check
-- Amount: Hidden
+## First Local Flow
 
-### Step 5: Redemption at Maturity
+1. Connect wallet
+2. Create account
+3. Go to `/tokens` and mint stablecoin
+4. Go to `/issuer` and deploy a bond
+5. Whitelist another account and distribute bonds if you want to test holder flows
+
+The frontend stores local metadata in `packages/frontend/data/iptf-bonds.db`.
+
+## Important Notes
+
+- Run CLI commands from `packages/cli` so `dotenv/config` picks up `packages/cli/.env`.
+- Run the frontend from `packages/frontend` so the SQLite DB is created in the expected place.
+- If you reset the local Aztec chain, rerun `pnpm setup:deploy` and clear saved frontend accounts.
+- `pnpm test` at the repo root is a placeholder. Use package-level commands instead.
+
+## Commands You Will Actually Use
 
 ```bash
-# Investor A redeems their bonds
-aztec-wallet send redeem \
-  --from accounts:test1 \
-  --contract-address contracts:privatebonds \
-  --args 400000
-
-# Investor B redeems their bonds
-aztec-wallet send redeem \
-  --from accounts:test2 \
-  --contract-address contracts:privatebonds \
-  --args 400000
+pnpm --filter @iptf/contracts run build
+pnpm --filter @iptf/contracts run test
+pnpm --filter @iptf/frontend run dev
+pnpm --filter @iptf/frontend run build
+pnpm --filter @iptf/cli run setup:deploy
 ```
 
-Bonds are burned. In production, a DvP contract would atomically exchange bonds for stablecoins.
+## Not Needed For Basic Frontend Bring-Up
 
-## Architecture
+These are not part of the shortest working path:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Aztec Wallet CLI                       │
-│  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ Deploy   │  │ Distribute │  │ Transfer │  │  Redeem  │  │
-│  └────┬─────┘  └─────┬──────┘  └────┬─────┘  └────┬─────┘  │
-│       │              │              │              │        │
-│       ▼              ▼              ▼              ▼        │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │            PXE (Private Execution Environment)       │  │
-│  │         ZK Proof Generation + Note Management        │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Aztec L2 (ZK Rollup to Ethereum)           │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              PrivateBonds Contract (Noir)            │   │
-│  │                                                      │   │
-│  │  Public State:                                       │   │
-│  │    owner, whitelist, total_supply, maturity_date     │   │
-│  │                                                      │   │
-│  │  Private State:                                      │   │
-│  │    private_balances (encrypted notes)                │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
+- `pnpm --filter @iptf/cli run setup:accounts`
+- `pnpm --filter @iptf/cli run setup:issuer`
+- `pnpm --filter @iptf/cli run escrow:create`
+- `pnpm --filter @iptf/cli run escrow:settle`
 
-## Test Accounts
-
-The sandbox provides pre-funded test accounts:
-
-| Account | Role       | Description                 |
-| ------- | ---------- | --------------------------- |
-| `test0` | Issuer     | Bond issuer / administrator |
-| `test1` | Investor A | Institutional investor      |
-| `test2` | Investor B | Institutional investor      |
-
-## PoC Implementation Notes
-
-This repository is a proof-of-concept. The following simplifications were made:
-
-| Spec Feature                          | PoC Implementation                     | Rationale                                            |
-| ------------------------------------- | -------------------------------------- | ---------------------------------------------------- |
-| Atomic DvP with stablecoin            | DvP contract + Stablecoin contract     | Atomic swap via authwit and cross-contract calls     |
-| Atomic redemption (bond ↔ stablecoin) | Simple `redeem` burn + off-chain fiat  | DvP available but redemption kept simple for demo    |
-| Bond attributes (ISIN/Asset ID)       | Single asset type assumed              | Simplifies contract for PoC                          |
-| Key rotation support                  | Not implemented                        | Aztec account abstraction handles keys               |
-| Per-note selective disclosure         | Per-contract viewing keys (app-siloed) | Native Aztec granularity; per-note needs custom ECDH |
-| Merkle whitelist for privacy          | Public `Map<address, bool>`            | Simpler, acceptable for regulated context            |
-
-### Known Limitations
-
-- **Redemption without DvP**: Redemption burns bonds directly; fiat settlement happens off-chain (DvP contract available but not used for redemption flow)
-- **Public whitelist**: Participants are linkable via whitelist reads (acceptable for KYC compliance)
-- **Single bond type**: No multi-tranche or multi-maturity support
-- **Viewing key scope**: App-siloed (per-contract) granularity; per-note disclosure requires custom implementation
-- **Testnet only**: Not audited for production use
-
-### What Aztec Provides (vs Custom UTXO)
-
-This approach significantly reduces implementation complexity compared to the custom-utxo PoC:
-
-| Component               | Custom UTXO           | Aztec L2              |
-| ----------------------- | --------------------- | --------------------- |
-| Note encryption         | Manual implementation | Protocol-native       |
-| Nullifier management    | Manual implementation | Protocol-native       |
-| Merkle tree             | Manual implementation | Protocol-native       |
-| ZK circuit              | Manual Noir circuit   | Built into BalanceSet |
-| Proof generation        | Manual bb CLI         | PXE handles it        |
-| Double-spend prevention | Contract logic        | Protocol-native       |
+Use them only if you are intentionally running the extra CLI demo flows.
 
 ## License
 
