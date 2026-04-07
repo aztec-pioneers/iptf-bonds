@@ -54,7 +54,12 @@ export function AztecWalletProvider({ children }: { children: ReactNode }) {
 
     try {
       const wallet = await ensureWallet();
-      const accountResult = await wallet.connectAllAccounts();
+      const [accountResult] = await Promise.all([
+        wallet.connectAllAccounts(),
+        wallet.registerDeployedContracts().catch((err) =>
+          console.warn("Contract registration failed:", err)
+        ),
+      ]);
       const { active, all } = accountResult;
       setAccounts(all.map(a => a.toString()));
 
@@ -79,6 +84,7 @@ export function AztecWalletProvider({ children }: { children: ReactNode }) {
 
     try {
       const wallet = await ensureWallet();
+      await wallet.registerDeployedContracts();
       const connectedAddress = await wallet.createAccountAndConnect();
       const addrStr = connectedAddress.toString();
       setAddress(addrStr);

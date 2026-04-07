@@ -1,12 +1,22 @@
 import "dotenv/config";
 import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { NO_FROM } from "@aztec/aztec.js/account";
 import { Fr } from "@aztec/aztec.js/fields";
 import { GrumpkinScalar } from "@aztec/foundation/curves/grumpkin";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { getInitialTestAccountsData } from "@aztec/accounts/testing";
-import { bootstrapAztecFPC, deployAztecFPC, fundAztecFPC } from "@jp4g/fpc-deployer";
+import {
+    bootstrapAztecFPC,
+    deployAccountAztecFPC,
+    deployAztecFPC,
+    fundAztecFPC,
+    claimAztecFPC,
+} from "@jp4g/fpc-deployer";
 import { deployTokenContract } from "@iptf/contracts/contract";
 import { TOKEN_METADATA } from "@iptf/contracts/constants";
 import { getSponsoredPaymentMethod, getPriorityFeeOptions } from "@iptf/contracts/fees";
@@ -31,43 +41,20 @@ const main = async () => {
     console.log("Connected to Aztec node at", L2_NODE_URL);
 
     // =========================================================================
-    // 1. Bootstrap FPC deployer account (creates + funds account via L1 bridge)
+    // 1. Initiate bootstrap bridge (L1 tx only, does not wait for L1→L2)
     // =========================================================================
-    console.log("Bootstrapping FPC deployer account...");
-    const deployerKeys = await bootstrapAztecFPC({
+    console.log("Initiating bootstrap bridge...");
+    const bootstrap = await bootstrapAztecFPC({
         l2Url: L2_NODE_URL,
         ...l1Config,
     });
-    console.log(`FPC deployer bootstrapped: ${deployerKeys.address}`);
+    console.log(`Bootstrap bridge initiated for deployer: ${bootstrap.address}`);
 
     // =========================================================================
-    // 2. Deploy Sponsored FPC contract
-    // =========================================================================
-    console.log("Deploying Sponsored FPC contract...");
-    const { fpcAddress } = await deployAztecFPC({
-        l2Url: L2_NODE_URL,
-        ...deployerKeys,
-    });
-    console.log(`Sponsored FPC deployed: ${fpcAddress}`);
-
-    // =========================================================================
-    // 3. Fund FPC with fee juice via L1 bridge
-    // =========================================================================
-    console.log("Funding FPC with fee juice...");
-    const fundResult = await fundAztecFPC({
-        l2Url: L2_NODE_URL,
-        ...l1Config,
-        ...deployerKeys,
-        fpcAddress,
-        amount: 1000n * 10n ** 18n,
-    });
-    console.log(`FPC funded — balance: ${fundResult.balance}`);
-
-    // =========================================================================
-    // 3.5. Advance chain on local net (2 dummy txs for L1→L2 message availability)
+    // 1.5. Advance chain on local net (dummy txs for L1→L2 message availability)
     // =========================================================================
     if (!(await isTestnet(node))) {
-        console.log("Local network detected — advancing chain with 2 dummy txs...");
+        console.log("Local network detected — advancing chain with dummy txs...");
         const [testAccountData] = await getInitialTestAccountsData();
         const tempWallet = await EmbeddedWallet.create(node);
         const tempAccount = await tempWallet.createSchnorrAccount(
@@ -81,20 +68,89 @@ const main = async () => {
             { name: "Dummy", symbol: "DUM", decimals: 0 },
             { send: { from: tempAccount.address } }
         );
-        // Two mints = two blocks
-        await tempToken
-            .withWallet(tempWallet)
-            .methods.mint_to_private(tempAccount.address, 1n)
-            .send({ from: tempAccount.address })
-            .wait();
-        console.log("Dummy tx 1/2 complete");
-        await tempToken
-            .withWallet(tempWallet)
-            .methods.mint_to_private(tempAccount.address, 1n)
-            .send({ from: tempAccount.address })
-            .wait();
-        console.log("Dummy tx 2/2 complete — chain advanced");
+        for (let i = 1; i <= 2; i++) {
+            await tempToken
+                .withWallet(tempWallet)
+                .methods.mint_to_private(tempAccount.address, 1n)
+                .send({ from: tempAccount.address });
+            console.log(`Dummy tx ${i}/2 complete`);
+        }
+        console.log("Chain advanced");
     }
+
+    // =========================================================================
+    // 2. Finalize bootstrap bridge (deploy deployer account)
+    // =========================================================================
+    console.log("Finalizing bootstrap bridge (deploying account)...");
+    await deployAccountAztecFPC({
+        l2Url: L2_NODE_URL,
+        ...bootstrap,
+        claim: bootstrap.claim,
+    });
+    console.log(`FPC deployer account deployed: ${bootstrap.address}`);
+
+    // =========================================================================
+    // 3. Deploy Sponsored FPC contract
+    // =========================================================================
+    console.log("Deploying Sponsored FPC contract...");
+    const { fpcAddress } = await deployAztecFPC({
+        l2Url: L2_NODE_URL,
+        ...bootstrap,
+    });
+    console.log(`Sponsored FPC deployed: ${fpcAddress}`);
+
+    // =========================================================================
+    // 4. Initiate fund bridge (L1 tx only, does not wait for L1→L2)
+    // =========================================================================
+    console.log("Initiating FPC fund bridge...");
+    const fund = await fundAztecFPC({
+        l2Url: L2_NODE_URL,
+        ...l1Config,
+        ...bootstrap,
+        fpcAddress,
+        amount: 1000n * 10n ** 18n,
+    });
+    console.log(`Fund bridge initiated for FPC: ${fund.fpcAddress}`);
+
+    // =========================================================================
+    // 4.5. Advance chain on local net (dummy txs for fund bridge)
+    // =========================================================================
+    if (!(await isTestnet(node))) {
+        console.log("Local network detected — advancing chain with dummy txs...");
+        const [testAccountData] = await getInitialTestAccountsData();
+        const tempWallet = await EmbeddedWallet.create(node);
+        const tempAccount = await tempWallet.createSchnorrAccount(
+            testAccountData.secret,
+            testAccountData.salt,
+            testAccountData.signingKey
+        );
+        const { contract: tempToken } = await deployTokenContract(
+            tempWallet,
+            tempAccount.address,
+            { name: "Dummy", symbol: "DUM", decimals: 0 },
+            { send: { from: tempAccount.address } }
+        );
+        for (let i = 1; i <= 2; i++) {
+            await tempToken
+                .withWallet(tempWallet)
+                .methods.mint_to_private(tempAccount.address, 1n)
+                .send({ from: tempAccount.address });
+            console.log(`Dummy tx ${i}/2 complete`);
+        }
+        console.log("Chain advanced");
+    }
+
+    // =========================================================================
+    // 5. Finalize fund bridge (claim fee juice to FPC)
+    // =========================================================================
+    console.log("Finalizing fund bridge (claiming fee juice)...");
+    const claimed = await claimAztecFPC({
+        l2Url: L2_NODE_URL,
+        ...bootstrap,
+        fpcAddress,
+        claim: fund.claim,
+    });
+    console.log(`FPC funded — balance: ${claimed.balance}`);
 
     // =========================================================================
     // 4. Create minter account using FPC for fees
@@ -123,11 +179,11 @@ const main = async () => {
         deployFee = { ...priorityFee, paymentMethod };
     }
 
-    await minterAccount.deploy({ fee: deployFee }).wait(
-        await isTestnet(node)
-            ? { timeout: testnetTimeout, interval: testnetInterval }
-            : {}
-    );
+    const deployMethod = await minterAccount.getDeployMethod();
+    await deployMethod.send({
+        from: NO_FROM,
+        fee: deployFee,
+    } as any);
 
     const minterAddress = minterAccount.address;
     console.log(`Minter account deployed: ${minterAddress}`);
@@ -144,7 +200,6 @@ const main = async () => {
     // =========================================================================
     console.log("Deploying stablecoin Token contract...");
     const minterWallet = wallet;
-    minterWallet.setDefaultAccount(minterAddress);
 
     const sendOpts: Record<string, unknown> = { from: minterAddress, fee: deployFee };
     if (await isTestnet(node)) {

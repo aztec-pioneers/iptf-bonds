@@ -25,8 +25,32 @@ import {
   removeStoredActiveAddress,
   clearAllStoredAccounts,
 } from "@/lib/storage";
+import { STABLECOIN_ADDRESS, SPONSORED_FPC_ADDRESS } from "@/config/contracts";
 
 const logger = createLogger("iptf-bonds:wallet");
+
+interface ContractRegistryEntry {
+  label: string;
+  address: string | undefined;
+  loadArtifact: () => Promise<import("@aztec/aztec.js/abi").ContractArtifact>;
+}
+
+const CONTRACT_REGISTRY: ContractRegistryEntry[] = [
+  {
+    label: "SponsoredFPC",
+    address: SPONSORED_FPC_ADDRESS || undefined,
+    loadArtifact: () =>
+      import("@aztec/noir-contracts.js/SponsoredFPC").then(
+        (m) => m.SponsoredFPCContractArtifact
+      ),
+  },
+  {
+    label: "Token (Stablecoin)",
+    address: STABLECOIN_ADDRESS || undefined,
+    loadArtifact: () =>
+      import("@iptf/contracts/artifacts").then((m) => m.TokenContractArtifact),
+  },
+];
 
 export class EmbeddedBondWallet extends BaseWallet {
   connectedAccount: AztecAddress | null = null;
@@ -67,32 +91,8 @@ export class EmbeddedBondWallet extends BaseWallet {
     config.dataDirectory = 'aztec-iptf-bonds';
     const pxe = await createPXE(aztecNode, config, {});
 
-    // Register sponsored FPC from env
-    const { SponsoredFPCContractArtifact } = await import(
-      "@aztec/noir-contracts.js/SponsoredFPC"
-    );
-    const { getContractInstanceFromInstantiationParams } = await import(
-      "@aztec/aztec.js/contracts"
-    );
-    const { SPONSORED_FPC_SALT } = await import("@aztec/constants");
-
-    const envAddr = process.env.NEXT_PUBLIC_SPONSORED_FPC_ADDRESS;
-    if (!envAddr) throw new Error("NEXT_PUBLIC_SPONSORED_FPC_ADDRESS not configured");
-    const fpcAztecAddr = AztecAddress.fromString(envAddr);
-
-    const fpcInstance = await getContractInstanceFromInstantiationParams(
-      SponsoredFPCContractArtifact,
-      { salt: new Fr(SPONSORED_FPC_SALT) }
-    );
-
-    const registered = await pxe.getContracts();
-    if (!registered.some(a => a.equals(fpcAztecAddr))) {
-      await pxe.registerContract({
-        instance: fpcInstance,
-        artifact: SponsoredFPCContractArtifact,
-      });
-      logger.info("[init] registered SponsoredFPC at", fpcAztecAddr.toString());
-    }
+    if (!SPONSORED_FPC_ADDRESS) throw new Error("NEXT_PUBLIC_SPONSORED_FPC_ADDRESS not configured");
+    const fpcAztecAddr = AztecAddress.fromString(SPONSORED_FPC_ADDRESS);
 
     const nodeInfo = await aztecNode.getNodeInfo();
     logger.info("PXE connected to node", nodeInfo);
@@ -223,14 +223,6 @@ export class EmbeddedBondWallet extends BaseWallet {
           await accountManager.getAccount()
         );
 
-        // Check if the account actually exists on-chain (sandbox may have restarted)
-        const metadata = await this.getContractMetadata(accountManager.address);
-        if (!metadata.isContractInitialized) {
-          logger.warn("Account not found on-chain, removing stale entry", entry.address);
-          this.accounts.delete(accountManager.address.toString());
-          continue;
-        }
-
         validAddresses.push(accountManager.address);
         validEntries.push(entry);
       } catch (err) {
@@ -251,6 +243,68 @@ export class EmbeddedBondWallet extends BaseWallet {
     return { active: activeAddr, all: validAddresses };
   }
 
+  async registerDeployedContracts(): Promise<void> {
+    const entries = CONTRACT_REGISTRY.filter((e) => !!e.address);
+
+    const registered = await this.pxe.getContracts();
+    const registeredSet = new Set(registered.map((a) => a.toString()));
+
+    const missing = entries.filter(
+      (e) =>
+        !registeredSet.has(AztecAddress.fromString(e.address!).toString())
+    );
+    if (missing.length === 0) {
+      logger.info(
+        `[register] all ${entries.length} contracts already registered`
+      );
+      return;
+    }
+    logger.info(`[register] registering ${missing.length} missing contracts`);
+
+    const resolved = await Promise.all(
+      missing.map(async (entry) => {
+        try {
+          const address = AztecAddress.fromString(entry.address!);
+          const [instance, artifact] = await Promise.all([
+            this.aztecNode.getContract(address),
+            entry.loadArtifact(),
+          ]);
+          if (!instance) {
+            logger.info(`[register] skip ${entry.label}: not found on-chain`);
+            return null;
+          }
+          return {
+            label: entry.label,
+            address: entry.address!,
+            instance,
+            artifact,
+          };
+        } catch (err) {
+          logger.warn(`[register] failed to fetch ${entry.label}:`, err);
+          return null;
+        }
+      })
+    );
+
+    const items = resolved.filter(
+      (r): r is NonNullable<typeof r> => r !== null
+    );
+    if (items.length === 0) return;
+
+    await this.enqueue(async () => {
+      for (const item of items) {
+        try {
+          await this.registerContract(item.instance, item.artifact);
+          logger.info(
+            `[register] registered ${item.label} at ${item.address}`
+          );
+        } catch (err) {
+          logger.warn(`[register] failed ${item.label}:`, err);
+        }
+      }
+    });
+  }
+
   async registerBondContract(contractAddress: AztecAddress): Promise<void> {
     const { PrivateBondsContractArtifact } = await import(
       "@iptf/contracts/artifacts"
@@ -263,6 +317,52 @@ export class EmbeddedBondWallet extends BaseWallet {
       await this.registerContract(instance, PrivateBondsContractArtifact);
       logger.info(`[register] registered bond contract at ${contractAddress}`);
     });
+  }
+
+  async registerTokenContract(contractAddress: AztecAddress): Promise<void> {
+    const { TokenContractArtifact } = await import("@iptf/contracts/artifacts");
+    const instance = await this.aztecNode.getContract(contractAddress);
+    if (!instance) {
+      throw new Error(`Token contract not found on-chain: ${contractAddress}`);
+    }
+    await this.enqueue(async () => {
+      await this.registerContract(instance, TokenContractArtifact);
+      logger.info(`[register] registered token contract at ${contractAddress}`);
+    });
+  }
+
+  async registerExternalAccount(credentials: {
+    secretKey: string;
+    salt: string;
+    signingKey: string;
+  }): Promise<AztecAddress> {
+    const contract = new SchnorrAccountContract(
+      GrumpkinScalar.fromString(credentials.signingKey)
+    );
+    const accountManager = await AccountManager.create(
+      this,
+      Fr.fromString(credentials.secretKey),
+      contract,
+      Fr.fromString(credentials.salt)
+    );
+
+    const instance = await accountManager.getInstance();
+    const artifact = await accountManager
+      .getAccountContract()
+      .getContractArtifact();
+    await this.enqueue(async () => {
+      await this.registerContract(
+        instance,
+        artifact,
+        accountManager.getSecretKey()
+      );
+    });
+    this.accounts.set(
+      accountManager.address.toString(),
+      await accountManager.getAccount()
+    );
+    logger.info(`[register] registered external account at ${accountManager.address}`);
+    return accountManager.address;
   }
 
   getAccountAddresses(): AztecAddress[] {

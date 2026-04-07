@@ -7,6 +7,7 @@ import WalletButton from "./WalletButton";
 const NAV_LINKS = [
   { href: "/issuer", label: "Issuer" },
   { href: "/holder", label: "Holder" },
+  { href: "/tokens", label: "Tokens" },
 ] as const;
 
 export default function Navbar() {

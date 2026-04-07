@@ -4,18 +4,18 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "@types/jest": "catalog:",
-    "@aztec/aztec.js": "catalog:",
     "@aztec/accounts": "catalog:",
+    "@aztec/aztec.js": "catalog:",
     "@aztec/ethereum": "catalog:",
+    "@aztec/foundation": "catalog:",
     "@aztec/noir-contracts.js": "catalog:",
     "@aztec/pxe": "catalog:",
-    "@aztec/wallets": "catalog:",
     "@aztec/stdlib": "catalog:",
-    "@aztec/foundation": "catalog:",
+    "@aztec/wallets": "catalog:",
     "@iptf/contracts": "workspace:*",
-    "dotenv": "catalog:",
-    "@jp4g/fpc-deployer": "0.2.0"
+    "@jp4g/fpc-deployer": "0.3.0",
+    "@types/jest": "catalog:",
+    "dotenv": "catalog:"
   },
   "peerDependencies": {
     "typescript": "catalog:"

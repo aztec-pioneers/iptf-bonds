@@ -28,7 +28,7 @@ pub contract PrivateBonds {
 
     #[storage]
     struct Storage<Context> {
-        issuer: PublicMutable<AztecAddress, Context>,
+        issuer: PublicImmutable<AztecAddress, Context>,
         private_balances: Owned<BalanceSet<Context>, Context>,
         whitelist: Map<AztecAddress, PublicMutable<bool, Context>, Context>,
         total_supply: PublicMutable<u128, Context>,
@@ -63,7 +63,7 @@ pub contract PrivateBonds {
         payment_token: AztecAddress,
         trusted_escrow_class_id: Field,
     ) {
-        self.storage.issuer.write(issuer);
+        self.storage.issuer.initialize(issuer);
         self.storage.name.initialize(name);
         self.storage.total_supply.write(total_supply);
         self.storage.maturity_date.write(maturity);
@@ -112,12 +112,11 @@ pub contract PrivateBonds {
             MessageDelivery.ONCHAIN_CONSTRAINED,
         );
 
-        // TODO: emit TransferEvent once issuer is DelayedPublicMutable (readable in private)
-        // let event_recipient = self.storage.issuer.read();
-        // self.emit(TransferEvent { from: issuer, to: investor, amount }).deliver_to(
-        //     event_recipient,
-        //     MessageDelivery.ONCHAIN_CONSTRAINED,
-        // );
+        let event_recipient = self.storage.issuer.read();
+        self.emit(TransferEvent { from: issuer, to: investor, amount }).deliver_to(
+            event_recipient,
+            MessageDelivery.ONCHAIN_CONSTRAINED,
+        );
     }
 
     #[external("private")]
@@ -138,12 +137,11 @@ pub contract PrivateBonds {
             MessageDelivery.ONCHAIN_CONSTRAINED,
         );
 
-        // TODO: emit TransferEvent once issuer is DelayedPublicMutable (readable in private)
-        // let issuer = self.storage.issuer.read();
-        // self.emit(TransferEvent { from: sender, to, amount }).deliver_to(
-        //     issuer,
-        //     MessageDelivery.ONCHAIN_CONSTRAINED,
-        // );
+        let issuer = self.storage.issuer.read();
+        self.emit(TransferEvent { from: sender, to, amount }).deliver_to(
+            issuer,
+            MessageDelivery.ONCHAIN_CONSTRAINED,
+        );
     }
 
     /// Delegated transfer for DvP and other authorized scenarios.
@@ -184,12 +182,11 @@ pub contract PrivateBonds {
             MessageDelivery.ONCHAIN_CONSTRAINED,
         );
 
-        // TODO: emit TransferEvent once issuer is DelayedPublicMutable (readable in private)
-        // let issuer = self.storage.issuer.read();
-        // self.emit(TransferEvent { from, to, amount }).deliver_to(
-        //     issuer,
-        //     MessageDelivery.ONCHAIN_CONSTRAINED,
-        // );
+        let issuer = self.storage.issuer.read();
+        self.emit(TransferEvent { from, to, amount }).deliver_to(
+            issuer,
+            MessageDelivery.ONCHAIN_CONSTRAINED,
+        );
     }
 
     /// Redeem bonds at maturity. Burns bonds and pays out stablecoins 1:1 from
@@ -229,17 +226,6 @@ pub contract PrivateBonds {
                 0,
             ));
     }
-
-    // TODO: re-enable once issuer is DelayedPublicMutable
-    // #[external("public")]
-    // fn transfer_ownership(new_issuer: AztecAddress) {
-    //     assert_eq(
-    //         self.msg_sender(),
-    //         self.storage.issuer.read(),
-    //         "Only current issuer can transfer ownership",
-    //     );
-    //     self.storage.issuer.write(new_issuer);
-    // }
 
     #[external("utility")]
     unconstrained fn private_balance_of(owner: AztecAddress) -> pub u128 {
