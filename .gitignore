@@ -7,3 +7,4 @@ pxe_data_*/
 wallet_data_*/
 data/
 .claude
+.env.local

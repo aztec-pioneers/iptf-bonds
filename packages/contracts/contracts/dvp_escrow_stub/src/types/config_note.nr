@@ -31,18 +31,6 @@ use poseidon::poseidon2::Poseidon2;
 // ---------------------------------------------------------------------------
 
 // TODO: Fill in the field types for ConfigNote
-//
-// This note stores all the parameters of the DvP deal so both buyer and seller
-// can reference them privately. It never changes after creation (immutable).
-//
-// Hints:
-//   owner -> AztecAddress (the escrow contract itself)
-//   partial_note -> Field (commitment hash for buyer->seller payment, explained in main.nr)
-//   bond_address -> AztecAddress (address of the PrivateBonds token contract)
-//   bond_amount -> u128 (how many bonds the seller must deliver)
-//   payment_token_address -> AztecAddress (address of the payment Token contract)
-//   payment_amount -> u128 (how much the buyer must pay)
-//   randomness -> Field (random salt for note hiding, prevents brute-force discovery)
 #[derive(Eq, Serialize, Deserialize, Packable)]
 #[note]
 pub struct ConfigNote {
@@ -82,7 +70,7 @@ impl ConfigNote {
         payment_token_address: AztecAddress,
         payment_amount: u128,
     ) -> Self {
-        // TODO: return Self with all fields, generating randomness via unsafe { random() }
+        // TODO
     }
 
 
@@ -110,6 +98,6 @@ impl ConfigNote {
     //         The second arg is the number of fields to hash.
     //         Hint: Poseidon2::hash(preimage, 8)
     pub fn get_nullifier(self, deposit: bool) -> Field {
-        // TODO: serialize, concat deposit flag, hash with Poseidon2
+        // TODO
     }
 }

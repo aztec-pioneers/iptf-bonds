@@ -72,16 +72,10 @@ pub contract DvPEscrowStub {
         // -------------------------------------------------------------------
 
         // Step 1: Create a partial note for the payment token
-        //   TODO: call Token::at(payment_token_address)
-        //             .initialize_transfer_commitment(self.msg_sender(), self.address)
-        //         via self.call(...) and store the result in `partial_note`
         let partial_note = // TODO
 
 
         // Step 2: Create a ConfigNote with all deal parameters
-        //   TODO: call ConfigNote::new(self.address, partial_note,
-        //             bond_address, bond_amount,
-        //             payment_token_address, payment_amount)
         let config = // TODO
 
 
@@ -99,9 +93,7 @@ pub contract DvPEscrowStub {
         // -------------------------------------------------------------------
 
         // Step 3: Initialize storage and deliver the note
-        //   TODO: self.storage.config
-        //             .initialize(config)
-        //             .deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
+        // TODO
     }
 
 
@@ -116,7 +108,7 @@ pub contract DvPEscrowStub {
     fn lock_delivery(_nonce: Field) {
 
         // Step 1: Read the config note from storage
-        let config = // TODO: self.storage.config.get_note()
+        let config = // TODO
         let caller = self.msg_sender();
 
         // -------------------------------------------------------------------
@@ -138,8 +130,7 @@ pub contract DvPEscrowStub {
         // -------------------------------------------------------------------
 
         // Step 2: Transfer bonds from seller to escrow
-        //   TODO: self.call(PrivateBonds::at(config.bond_address)
-        //             .transfer_from(caller, self.address, config.bond_amount, _nonce));
+        // TODO
 
 
         // -------------------------------------------------------------------
@@ -158,8 +149,7 @@ pub contract DvPEscrowStub {
         // -------------------------------------------------------------------
 
         // Step 3: Emit a deposit nullifier to prevent double-deposits
-        //   TODO: let deposit_nullifier = self.storage.config.get_note().get_nullifier(true);
-        //         self.context.push_nullifier(deposit_nullifier);
+        // TODO
     }
 
 
@@ -178,28 +168,20 @@ pub contract DvPEscrowStub {
     fn settle(_nonce: Field) {
 
         // Step 1: Read the config note from storage
-        let config = // TODO: self.storage.config.get_note()
+        let config = // TODO
         let caller = self.msg_sender();
 
         // Step 2: Transfer payment tokens from buyer to escrow
-        //   TODO: self.call(Token::at(config.payment_token_address)
-        //             .transfer_private_to_private(
-        //                 caller, self.address, config.payment_amount, _nonce));
+        // TODO
 
 
         // Step 3: Finalize the partial note -- buyer's payment goes to the seller
         //   This "completes" the partial note created in the constructor.
-        //   TODO: self.call(Token::at(config.payment_token_address)
-        //             .transfer_private_to_commitment(
-        //                 self.address, config.partial_note,
-        //                 config.payment_amount, 0));
+        // TODO
 
 
         // Step 4: Transfer bonds from escrow to buyer + emit fill nullifier
-        //   a) TODO: self.call(PrivateBonds::at(config.bond_address)
-        //                .transfer_from(self.address, caller, config.bond_amount, 0));
-        //   b) TODO: let fill_nullifier = config.get_nullifier(false);
-        //            self.context.push_nullifier(fill_nullifier);
+        // TODO
     }
 
 
@@ -220,6 +202,6 @@ pub contract DvPEscrowStub {
 
     #[external("utility")]
     unconstrained fn get_config() -> ConfigNote {
-        // TODO: self.storage.config.view_note()
+        // TODO
     }
 }
