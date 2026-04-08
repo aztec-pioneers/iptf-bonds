@@ -87,7 +87,7 @@ export class EmbeddedBondWallet extends BaseWallet {
     const aztecNode = createAztecNodeClient(nodeUrl);
 
     const config = getPXEConfig();
-    config.proverEnabled = false;
+    config.proverEnabled = true;
     config.dataDirectory = 'aztec-iptf-bonds';
     const pxe = await createPXE(aztecNode, config, {});
 
